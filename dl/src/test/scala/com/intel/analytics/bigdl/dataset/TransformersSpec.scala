@@ -538,7 +538,7 @@ class TransformersSpec extends FlatSpec with Matchers {
     val sample3 = Sample[Float](tensorInput3, tensorTarget3)
     val dataSet = new LocalArrayDataSet[Sample[Float]](Array(sample1,
       sample2, sample3))
-    val sampleToBatch = SampleToBatch[Float](2, true)
+    val sampleToBatch = SampleToBatch[Float](3, true)
     val sampleDataSet = dataSet -> sampleToBatch
     val iter = sampleDataSet.toLocal().data(train = true)
     val batch1 = iter.next()

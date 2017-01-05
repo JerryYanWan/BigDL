@@ -489,6 +489,7 @@ class TransformersSpec extends FlatSpec with Matchers {
     count should be(11)
   }
 
+
   "SampleToBatchSpec" should "be good with TableBatch1" in {
     val tensorInput1 = Tensor[Float](Storage(
       Array(0.0f, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0)), 1, Array(3, 5))

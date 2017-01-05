@@ -20,6 +20,7 @@ package com.intel.analytics.bigdl.dataset
 import java.nio.file.{Path, Paths}
 
 import com.intel.analytics.bigdl.dataset.image._
+import com.intel.analytics.bigdl.dataset.text.{LabeledSentence, LabeledSentenceToSample}
 import com.intel.analytics.bigdl.tensor.{Storage, Tensor}
 import com.intel.analytics.bigdl.utils.{Engine, RandomGenerator, T}
 import com.intel.analytics.bigdl.utils.RandomGenerator.RNG
@@ -488,7 +489,24 @@ class TransformersSpec extends FlatSpec with Matchers {
     count should be(11)
   }
 
-  "SampleToBatchSpec" should "be good with TableBatch" in {
+  "LabeledSentence toSample" should "transform correctly for array label" in {
+    Engine.setNodeNumber(None)
+    val input1 = Array(1.0f, 2.0f, 3.0f)
+    val target1 = Array(2.0f, 3.0f, 4.0f)
+    val input2 = Array(2.0f, 1.0f, 0.0f, 4.0f)
+    val target2 = Array(1.0f, 0.0f, 4.0f, 0.0f)
+    val input3 = Array(0.0f, 4.0f)
+    val target3 = Array(4.0f, 1.0f)
+    val labeledSentence1 = new LabeledSentence[Float](input1, target1)
+    val labeledSentence2 = new LabeledSentence[Float](input2, target2)
+    val labeledSentence3 = new LabeledSentence[Float](input3, target3)
+
+    val dataSet = new LocalArrayDataSet[LabeledSentence[Float]](Array(labeledSentence1,
+      labeledSentence2, labeledSentence3))
+
+    val labeledSentenceToSample = LabeledSentenceToSample(5)
+    val sampleDataSet = dataSet -> labeledSentenceToSample
+    val iter = sampleDataSet.toLocal().data(train = true)
     val tensorInput1 = Tensor[Float](Storage(
       Array(0.0f, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0)), 1, Array(3, 5))
     val tensorInput2 = Tensor[Float](Storage(
@@ -505,20 +523,66 @@ class TransformersSpec extends FlatSpec with Matchers {
     val sample2 = Sample[Float](tensorInput2, tensorTarget2)
     val sample3 = Sample[Float](tensorInput3, tensorTarget3)
 
-    val dataSet = new LocalArrayDataSet[Sample[Float]](Array(sample1,
-      sample2, sample3))
-    val sampleToBatch = SampleToBatch[Float](2, true)
-    val sampleDataSet = dataSet -> sampleToBatch
-    val iter = sampleDataSet.toLocal().data(train = false)
-
     val batch1 = iter.next()
-
-    batch1.data should be (T(tensorInput1, tensorInput2))
-    batch1.labels should be (T(tensorTarget1, tensorTarget2))
+    batch1.feature() should be (tensorInput1)
+    batch1.label() should be (tensorTarget1)
 
     val batch2 = iter.next()
-    batch2.data should be (T(tensorInput3))
-    batch2.labels should be (T(tensorTarget3))
+    batch2.feature() should be (tensorInput2)
+    batch2.label() should be (tensorTarget2)
+
+    val batch3 = iter.next()
+    batch3.feature() should be (tensorInput3)
+    batch3.label() should be (tensorTarget3)
+  }
+
+  "LabeledSentence toSample" should "transform correctly for single label" in {
+    Engine.setNodeNumber(None)
+    val input1 = Array(1.0f, 2.0f, 3.0f)
+    val target1 = Array(1.0f)
+    val input2 = Array(2.0f, 1.0f, 0.0f, 4.0f)
+    val target2 = Array(0.0f)
+    val input3 = Array(0.0f, 4.0f)
+    val target3 = Array(1.0f)
+    val labeledSentence1 = new LabeledSentence[Float](input1, target1)
+    val labeledSentence2 = new LabeledSentence[Float](input2, target2)
+    val labeledSentence3 = new LabeledSentence[Float](input3, target3)
+
+    val dataSet = new LocalArrayDataSet[LabeledSentence[Float]](Array(labeledSentence1,
+      labeledSentence2, labeledSentence3))
+
+    val labeledSentenceToSample = LabeledSentenceToSample(5)
+    val sampleDataSet = dataSet -> labeledSentenceToSample
+    val iter = sampleDataSet.toLocal().data(train = true)
+
+    val tensorInput1 = Tensor[Float](Storage(
+      Array(0.0f, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0)), 1, Array(3, 5))
+    val tensorInput2 = Tensor[Float](Storage(
+      Array(0.0f, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1)), 1, Array(4, 5))
+    val tensorInput3 = Tensor[Float](Storage(
+      Array(1.0f, 0, 0, 0, 0, 0, 0, 0, 0, 1)), 1, Array(2, 5))
+    val tensorTarget1 = Tensor[Float](Storage(
+      Array(2.0f)), 1, Array(1))
+    val tensorTarget2 = Tensor[Float](Storage(
+      Array(1.0f)), 1, Array(1))
+    val tensorTarget3 = Tensor[Float](Storage(
+      Array(2.0f)), 1, Array(1))
+
+    val sample1 = Sample[Float](tensorInput1, tensorTarget1)
+    val sample2 = Sample[Float](tensorInput2, tensorTarget2)
+    val sample3 = Sample[Float](tensorInput3, tensorTarget3)
+
+    val batch1 = iter.next()
+    batch1.feature() should be (tensorInput1)
+    batch1.label() should be (tensorTarget1)
+
+    val batch2 = iter.next()
+    batch2.feature() should be (tensorInput2)
+    batch2.label() should be (tensorTarget2)
+
+    val batch3 = iter.next()
+    batch3.feature() should be (tensorInput3)
+    batch3.label() should be (tensorTarget3)
   }
   "SampleToBatchSpec" should "be good with TensorBatch" in {
     val tensorInput1 = Tensor[Float](Storage(

@@ -43,7 +43,10 @@ object Utils {
     vocabSize: Int = 4000,
     bptt: Int = 4,
     nEpochs: Int = 30,
-    coreNumber: Int = -1)
+    coreNumber: Int = -1
+    nodeNumber: Int = -1,
+    env: String = "local"
+  )
 
   val trainParser = new OptionParser[TrainParams]("BigDL SimpleRNN Train Example") {
     opt[String]('f', "dataFolder")

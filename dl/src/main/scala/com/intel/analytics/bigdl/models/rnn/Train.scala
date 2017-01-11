@@ -35,6 +35,12 @@ object Train {
   val logger = Logger.getLogger(getClass)
   def main(args: Array[String]): Unit = {
     trainParser.parse(args, new TrainParams()).map(param => {
+      /*val sc = Engine.init(param.nodeNumber, param.coreNumber, param.env == "spark").map(conf => {
+        conf.setAppName("Train Lenet on MNIST")
+          .set("spark.akka.frameSize", 64.toString)
+          .set("spark.task.maxFailures", "1")
+        new SparkContext(conf)
+      })*/
 
       val inputDirect = new File(param.dataFolder)
       if (!inputDirect.isDirectory || inputDirect.list.length == 0) {

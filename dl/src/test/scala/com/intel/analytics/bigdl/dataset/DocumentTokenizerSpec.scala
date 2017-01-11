@@ -51,7 +51,7 @@ class DocumentTokenizerSpec extends FlatSpec with Matchers {
     })
 
     val numOfSents = 5
-    val numOfWords = 25
+    val numOfWords = 19
 
     output.length should be (numOfSents)
     count should be (numOfWords)

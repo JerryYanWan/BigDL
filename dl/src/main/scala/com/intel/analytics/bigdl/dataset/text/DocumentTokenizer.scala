@@ -50,7 +50,7 @@ class DocumentTokenizer() extends Transformer[String, Array[Array[String]]] {
       val sqlContext = new SQLContext(sc)
       import sqlContext.implicits._
           
-      val new_df = logData.flatMap(_.split("(?<=[.!?])\\s* ")).toDF("sentence")
+      val new_df = logData.flatMap(_.split("(?<=[.!?])")).toDF("sentence")
       val regexTokenizer = new RegexTokenizer().setInputCol("sentence").setOutputCol("words").setPattern("\\W+").setMinTokenLength(0)
       val regexTokenized = regexTokenizer.transform(new_df)
       val countTokens = udf { (words: Seq[String]) => words.length }

@@ -43,7 +43,9 @@ object Utils {
     vocabSize: Int = 4000,
     bptt: Int = 4,
     nEpochs: Int = 30,
-    coreNumber: Int = -1)
+    coreNumber: Int = -1,
+    nodeNumber: Int = -1,
+    env: String = "local")
 
   val trainParser = new OptionParser[TrainParams]("BigDL SimpleRNN Train Example") {
     opt[String]('f', "dataFolder")
@@ -100,8 +102,25 @@ object Utils {
       .action((x, c) => c.copy(nEpochs = x))
 
     opt[Int]('c', "core")
-      .text("cores number to train the model")
+      .text("cores number on each node")
       .action((x, c) => c.copy(coreNumber = x))
+      .required()
+
+    opt[Int]('n', "node")
+      .text("node number to train the model")
+      .action((x, c) => c.copy(nodeNumber = x))
+      .required()
+
+    opt[String]("env")
+      .text("execution environment")
+      .validate(x => {
+        if (Set("local", "spark").contains(x.toLowerCase)) {
+          success
+        } else {
+          failure("env only support local|spark")
+        }
+      })
+      .action((x, c) => c.copy(env = x.toLowerCase()))
       .required()
   }
 

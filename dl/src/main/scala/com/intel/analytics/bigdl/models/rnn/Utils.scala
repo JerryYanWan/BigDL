@@ -35,6 +35,7 @@ object Utils {
     modelSnapshot: Option[String] = None,
     stateSnapshot: Option[String] = None,
     checkpoint: Option[String] = None,
+    batchSize: Int = 128,
     learningRate: Double = 0.1,
     momentum: Double = 0.0,
     weightDecay: Double = 0.0,
@@ -68,6 +69,11 @@ object Utils {
     opt[String]("checkpoint")
       .text("where to cache the model and state")
       .action((x, c) => c.copy(checkpoint = Some(x)))
+
+    opt[Int]('b', "batchSize")
+      .text("batchSize of rnn")
+      .action((x, c) => c.copy(batchSize = x))
+      .required()
 
     opt[Double]('r', "learningRate")
       .text("learning rate")

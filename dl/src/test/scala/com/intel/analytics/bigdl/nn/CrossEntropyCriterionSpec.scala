@@ -68,6 +68,7 @@ class CrossEntropyCriterionSpec extends FlatSpec with Matchers {
     expectedGrad(Array(3, 2)) = 0.14364876
     expectedGrad(Array(3, 3)) = -0.23996699
     val gradInput = criterion.backward(input, target)
+      .toTensor[Double]
 
     expectedGrad.map(gradInput, (v1, v2) => {
       assert(abs(v1 - v2) < 1e-6);

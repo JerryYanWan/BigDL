@@ -40,8 +40,6 @@ class DocumentTokenizer() extends Transformer[String, Array[Array[String]]] {
       val sc = new SparkContext("local[1]", "DocumentTokenizer")
       val logData = sc.textFile(x, 2).filter(!_.isEmpty()).cache()
 
-      val sqlContext = new SQLContext(sc)
-
       val sentences_split = SimpleSentenceSplitter
         .getInstance.split(logData.collect().reduce((l, r) => l + r))
       val tokenizer = new SimpleTokenizer(true)
@@ -49,6 +47,7 @@ class DocumentTokenizer() extends Transformer[String, Array[Array[String]]] {
           val words = tokenizer.split(sentences_split(i))
           sentences.append(words)
       }
+      sc.stop()
       sentences.toArray
     })
 }

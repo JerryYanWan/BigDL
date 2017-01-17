@@ -66,14 +66,15 @@ object Train {
       val trainMaxLength = dataArray._3
       val valMaxLegnth = dataArray._4
 
-      val batchSize = 1
+      val batchSize = param.batchSize
+      val isTable = if (batchSize > 1) true else false
 
       val trainSet = DataSet.array(trainData)
            .transform(LabeledSentenceToSample(dictionaryLength))
-           .transform(SampleToBatch(batchSize = batchSize))
+           .transform(SampleToBatch(batchSize = batchSize, isTable = isTable))
       val validationSet = DataSet.array(valData)
            .transform(LabeledSentenceToSample(dictionaryLength))
-           .transform(SampleToBatch(batchSize = batchSize))
+           .transform(SampleToBatch(batchSize = batchSize, isTable = isTable))
 
       val model = if (param.modelSnapshot.isDefined) {
         Module.load[Float](param.modelSnapshot.get)
@@ -100,7 +101,7 @@ object Train {
       val optimizer = Optimizer(
         model = model,
         dataset = trainSet,
-        criterion = new CrossEntropyCriterion[Float](squeezeFlag = true)
+        criterion = CrossEntropyCriterion[Float](squeezeFlag = true)
       )
       if (param.checkpoint.isDefined) {
         optimizer.setCheckpoint(param.checkpoint.get, Trigger.everyEpoch)

@@ -264,6 +264,7 @@ class ResNetSpec extends FlatSpec with BeforeAndAfter with Matchers {
     assert(abs(errTest - err) < 1.5e-6)
 
     val gradOutputTest = criterion.backward(outputTest, labels)
+        .asInstanceOf[Tensor[Float]]
     val gradOutput = TH.map("gradOutput").asInstanceOf[Tensor[Float]]
     abss = 0.0
     for (i <- 0 until gradOutputTest.nElement()) {

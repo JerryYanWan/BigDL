@@ -16,9 +16,10 @@
  */
 package com.intel.analytics.bigdl.nn
 
-import com.intel.analytics.bigdl.nn.abstractnn.TensorCriterion
+import com.intel.analytics.bigdl.nn.abstractnn.{AbstractCriterion, Activity, TensorCriterion}
 import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric
+import com.intel.analytics.bigdl.utils.Table
 
 import scala.reflect.ClassTag
 
@@ -32,34 +33,42 @@ import scala.reflect.ClassTag
 class CrossEntropyCriterion[T: ClassTag](
    val weights: Tensor[T] = null,
    val squeezeFlag: Boolean = false)
-   (implicit ev: TensorNumeric[T]) extends TensorCriterion[T]{
+   (implicit ev: TensorNumeric[T]) extends AbstractCriterion[Tensor[T], Activity, T]{
   private val lsm = new LogSoftMax[T]()
   private val nll = new ClassNLLCriterion[T](weights)
 
-  override def updateOutput(input: Tensor[T], target: Tensor[T]): T = {
-    if (squeezeFlag) {
-      input.squeeze()
-      target.squeeze()
-    }
+  private val joinTableTarget = JoinTable(1, 0)
 
+  private def toTensor(target: Activity): Tensor[T] = {
+    val _target = target match {
+      case tensorTarget: Tensor[T] =>
+        if (squeezeFlag) tensorTarget.squeeze()
+        tensorTarget
+      case tableTarget: Table =>
+        joinTableTarget.updateOutput(tableTarget)
+      case _ => throw new IllegalArgumentException("Target should be Activity")
+    }
+    _target
+  }
+
+  override def updateOutput(input: Tensor[T], target: Activity): T = {
+    val _target = toTensor(target)
+    if (squeezeFlag) input.squeeze()
     lsm.updateOutput(input)
-    nll.updateOutput(lsm.output, target.asInstanceOf[Tensor[T]])
+    nll.updateOutput(lsm.output, _target)
     output = nll.output
     output
   }
 
-  override def updateGradInput(input: Tensor[T], target: Tensor[T]): Tensor[T] = {
+  override def updateGradInput(input: Tensor[T], target: Activity): Tensor[T] = {
+    val _target = toTensor(target)
     val size = input.size()
     var _gradInput = Tensor[T]()
-    if (squeezeFlag) {
-      input.squeeze()
-      target.squeeze()
-    }
-
-    _gradInput = nll.updateGradInput(lsm.output, target)
+    if (squeezeFlag) input.squeeze()
+    _gradInput = nll.updateGradInput(lsm.output, _target)
     lsm.updateGradInput(input, _gradInput)
     gradInput.resizeAs(lsm.gradInput).copy(lsm.gradInput).view(size)
-    gradInput
+    gradInput.toTensor
   }
 
   override def equals(other: Any): Boolean = other match {

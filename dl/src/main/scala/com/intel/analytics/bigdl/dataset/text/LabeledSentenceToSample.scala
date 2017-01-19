@@ -94,7 +94,7 @@ class LabeledSentenceToSample(vocabLength: Int,
         i += 1
       }
 
-      buffer.copy(featureBuffer, labelBuffer,
+      buffer.set(featureBuffer, labelBuffer,
         Array(dataLength, vocabLength), Array(labelLength))
     })
   }

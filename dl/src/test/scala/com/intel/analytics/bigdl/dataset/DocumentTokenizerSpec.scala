@@ -24,11 +24,49 @@ import com.intel.analytics.bigdl.utils.Engine
 import org.apache.spark.SparkContext
 import org.scalatest.{FlatSpec, Matchers}
 
+import scala.io.Source
+
 class DocumentTokenizerSpec extends FlatSpec with Matchers {
 
-  "DocumentTokenizerSpec" should "tokenizes articles correctly" in {
+  "DocumentTokenizerSpec" should "tokenizes articles correctly on Spark" in {
     val tmpFile = java.io.File
       .createTempFile("UnitTest", "DocumentTokenizerSpec").getPath
+
+    val sentence1 = "Enter Barnardo and Francisco, two sentinels."
+    val sentence2 = "Who’s there?"
+    val sentence3 = "I think I hear them. Stand ho! Who is there?"
+    val sentence4 = "The Dr. lives in a blue-painted box."
+
+    val sentences = Array(sentence1, sentence2, sentence3, sentence4)
+    new PrintWriter(tmpFile) {
+      write(sentences.mkString("\n")); close
+    }
+
+    Engine.init(1, 1, true)
+    val sc = new SparkContext("local[1]", "DocumentTokenizer")
+    val sents = DataSet.rdd(sc.textFile(tmpFile)
+      .filter(!_.isEmpty)).transform(SentenceSplitter())
+    val output_sents = sents.toDistributed().data(train = false).collect().flatten
+    val tokens = DataSet.rdd(sc.parallelize(output_sents)).transform(DocumentTokenizer())
+    val output = tokens.toDistributed().data(train = false).collect()
+
+    var count = 0
+    println("tokenized sentences:")
+    output.foreach(x => {
+      count += x.length
+      println(x.mkString(" "))
+    })
+
+    val numOfSents = 6
+    val numOfWords = 46
+
+    output.length should be (numOfSents)
+    count should be (numOfWords)
+  }
+
+  "DocumentTokenizerSpec" should "tokenizes articles correctly on local" in {
+    val tmpFile = java.io.File
+        .createTempFile("UnitTest", "DocumentTokenizerSpec").getPath
 
     val sentence1 = "Enter Barnardo and Francisco, two sentinels."
     val sentence2 = "Who’s there?"
@@ -41,23 +79,23 @@ class DocumentTokenizerSpec extends FlatSpec with Matchers {
       write(sentences.mkString("\n")); close
     }
 
-    Engine.init(1, 1, true)
-    val sc = new SparkContext("local[1]", "DocumentTokenizer")
-    val tokens = DataSet.rdd(sc.textFile(tmpFile)
-      .filter(!_.isEmpty)).transform(DocumentTokenizer())
-    val output = tokens.toDistributed().data(train = false).collect()
+    val logData = Source.fromFile(tmpFile).getLines().toArray
+    val sents = DataSet.array(logData
+      .filter(!_.isEmpty)).transform(SentenceSplitter())
+    val output_sents = sents.toLocal().data(train = false).flatMap(item => item.iterator)
+    val tokens = DataSet.array(output_sents.toArray).transform(DocumentTokenizer())
+    val output = tokens.toLocal().data(train = false).toArray
 
-    var count = 0
+    var count_word = 0
     println("tokenized sentences:")
     output.foreach(x => {
-      count += x.length
+      count_word += x.length
       println(x.mkString(" "))
     })
 
-    val numOfSents = 4
-    val numOfWords = 33
-
+    val numOfSents = 6
+    val numOfWords = 46
     output.length should be (numOfSents)
-    count should be (numOfWords)
+    count_word should be (numOfWords)
   }
 }

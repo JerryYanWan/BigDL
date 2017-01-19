@@ -489,7 +489,6 @@ class TransformersSpec extends FlatSpec with Matchers {
     count should be(11)
   }
 
-
   "SampleToBatchSpec" should "be good with TableBatch1" in {
     val tensorInput1 = Tensor[Float](Storage(
       Array(0.0f, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0)), 1, Array(3, 5))
@@ -544,7 +543,6 @@ class TransformersSpec extends FlatSpec with Matchers {
     val batch1 = iter.next()
     batch1.data should be (T(tensorInput1, tensorInput2))
     batch1.labels should be (T(tensorTarget1, tensorTarget2))
-
     val batch2 = iter.next()
     batch2.data should be (T(tensorInput3, tensorInput1))
     batch2.labels should be (T(tensorTarget3, tensorTarget1))

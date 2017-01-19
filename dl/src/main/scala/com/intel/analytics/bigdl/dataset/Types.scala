@@ -65,7 +65,6 @@ class LocalImagePath(val path : Path)
  */
 case class LocalSeqFilePath(val path: Path)
 
-
 /**
  * Represent a label
  *
@@ -75,8 +74,6 @@ trait Label[T] {
   def setLabel(label: T): this.type
   def label(): T
 }
-
-
 
 /**
  * A byte array and a label. It can contain anything.

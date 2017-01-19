@@ -64,7 +64,6 @@ class LocalImagePath(val path : Path)
  * @param path
  */
 case class LocalSeqFilePath(val path: Path)
-
 /**
  * Represent a label
  *

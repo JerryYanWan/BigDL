@@ -185,8 +185,9 @@ object Utils {
     val writePipeLine = dataSet -> documentTokenizer
     val iter = writePipeLine.toLocal().data(train = false)
 
-    iter.next.map(x =>
-      Array(Sentence.sentenceStart) ++ x.take(x.length - 1))
+//    iter.next.map(x =>
+//      Array(Sentence.sentenceStart) ++ x.take(x.length - 1))
+    Array[Array[String]]()
   }
 
   class WordTokenizer(
@@ -216,37 +217,38 @@ object Utils {
         val writePipeLine = dataSet -> documentTokenizer
         val iter = writePipeLine.toLocal().data(train = false)
 
+
         val lines = ArrayBuffer[Array[String]]()
-        while (iter.hasNext) {
-          iter.next().foreach(x => {
-            lines.append(
-              Array(Sentence.sentenceStart) ++ x ++ Array(Sentence.sentenceEnd))
-          })
-        }
+//        while (iter.hasNext) {
+//          iter.next().foreach(x => {
+//            lines.append(
+//              Array(Sentence.sentenceStart) ++ x ++ Array(Sentence.sentenceEnd))
+//          })
+//        }
         val sentences = lines.toArray
 
-        val dictionary = Dictionary(sentences, dictionaryLength)
-        _vocabSize = dictionary.vocabSize() + 1
-
-        // save dictionary
-        new PrintWriter(saveTo.getAbsolutePath + "/dictionary.txt") {
-          write(dictionary.word2Index().mkString("\n")); close
-        }
-
-        // save discard dictionary
-        new PrintWriter(saveTo.getAbsolutePath + "/discard.txt") {
-          write(dictionary.discardVocab().mkString("\n")); close
-        }
-
-        // Convert the string texts to integer arrays
-        val mappedDF = sentences.filter(_.size > 3)
-          .map(word => word.map(
-            w => dictionary.word2Index().getOrElse(w, dictionary.vocabSize())))
+//        val dictionary = Dictionary(sentences, dictionaryLength)
+//        _vocabSize = dictionary.vocabSize() + 1
+//
+//        // save dictionary
+//        new PrintWriter(saveTo.getAbsolutePath + "/dictionary.txt") {
+//          write(dictionary.word2Index().mkString("\n")); close
+//        }
+//
+//        // save discard dictionary
+//        new PrintWriter(saveTo.getAbsolutePath + "/discard.txt") {
+//          write(dictionary.discardVocab().mkString("\n")); close
+//        }
+//
+//        // Convert the string texts to integer arrays
+//        val mappedDF = sentences.filter(_.size > 3)
+//          .map(word => word.map(
+//            w => dictionary.word2Index().getOrElse(w, dictionary.vocabSize())))
 
         // save converted data
-        new PrintWriter(saveTo.getAbsolutePath + "/mapped_data.txt") {
-          write(mappedDF.map(_.mkString(",")).mkString("\n")); close
-        }
+//        new PrintWriter(saveTo.getAbsolutePath + "/mapped_data.txt") {
+//          write(mappedDF.map(_.mkString(",")).mkString("\n")); close
+//        }
       } else {
         logger.info("mapped_data.txt already exists! Dictionary Size unchanged.")
         val dictionary = Dictionary(saveTo.getAbsolutePath)

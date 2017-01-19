@@ -21,13 +21,15 @@ import java.io.File
 
 import com.intel.analytics.bigdl._
 import com.intel.analytics.bigdl.dataset.{DataSet, SampleToBatch}
-import com.intel.analytics.bigdl.dataset.text.LabeledSentenceToSample
+import com.intel.analytics.bigdl.dataset.text.{Dictionary, DocumentTokenizer, LabeledSentenceToSample, TextToLabeledSentence}
 import com.intel.analytics.bigdl.nn.{CrossEntropyCriterion, Module}
 import com.intel.analytics.bigdl.optim._
 import com.intel.analytics.bigdl.utils.{Engine, T}
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric._
 import org.apache.log4j.Logger
 import org.apache.spark.SparkContext
+
+import scala.io.Source
 
 
 object Train {
@@ -44,37 +46,45 @@ object Train {
         new SparkContext(conf)
       })
 
-      val inputDirect = new File(param.dataFolder)
-      if (!inputDirect.isDirectory || inputDirect.list.length == 0) {
-        throw new IllegalArgumentException(
-          "data folder is not a directory or input files not exists!")
+      val (trainSet, validationSet, dictionaryLength) = if (!sc.isDefined) {
+        val logData = Source.fromFile(param.dataFolder + "/" + "train.txt").getLines().toArray
+        val tokens = DataSet.array(logData.filter(!_.isEmpty))
+          .transform(DocumentTokenizer())
+        val dictionary = Dictionary(tokens.toLocal().data(false), param.vocabSize)
+        dictionary.save(param.saveFolder)
+        val isTable = if (param.batchSize > 1) true else false
+        println("vocabulary size = " + dictionary.vocabSize())
+        (tokens
+            .transform(TextToLabeledSentence(dictionary))
+            .transform(LabeledSentenceToSample(dictionary.vocabSize() + 1))
+            .transform(SampleToBatch(batchSize = param.batchSize, isTable = isTable)),
+          DataSet.array(Source.fromFile(param.dataFolder + "/" + "val.txt").getLines()
+            .toArray.filter(!_.isEmpty))
+            .transform(DocumentTokenizer())
+            .transform(TextToLabeledSentence(dictionary))
+            .transform(LabeledSentenceToSample(dictionary.vocabSize() + 1))
+            .transform(SampleToBatch(batchSize = param.batchSize, isTable = isTable)),
+          dictionary.vocabSize() + 1)
+      } else {
+        val tokens = DataSet.rdd(sc.get.textFile(param.dataFolder + "/" + "train.txt")
+          .filter(!_.isEmpty)).transform(DocumentTokenizer())
+        val dictionary = Dictionary(tokens.toDistributed().data(false),
+          param.vocabSize)
+        dictionary.save(param.saveFolder)
+        val isTable = if (param.batchSize > 1) true else false
+
+        (tokens
+            .transform(TextToLabeledSentence(dictionary))
+            .transform(LabeledSentenceToSample(dictionary.vocabSize() + 1))
+            .transform(SampleToBatch(batchSize = param.batchSize, isTable = isTable)),
+          DataSet.rdd(sc.get.textFile(param.dataFolder + "/" + "val.txt")
+            .filter(!_.isEmpty))
+            .transform(DocumentTokenizer())
+            .transform(TextToLabeledSentence(dictionary))
+            .transform(LabeledSentenceToSample(dictionary.vocabSize() + 1))
+            .transform(SampleToBatch(batchSize = param.batchSize, isTable = isTable)),
+          dictionary.vocabSize() + 1)
       }
-      logger.info("preprocessing input text file ..")
-
-      val wt = new WordTokenizer(
-        param.dataFolder,
-        param.saveFolder,
-        dictionaryLength = param.vocabSize
-      )
-      wt.process()
-
-      val dictionaryLength: Int = wt.length()
-      logger.info("loading the training and testing data ..")
-      val dataArray = loadData(param.saveFolder, dictionaryLength)
-      val trainData = dataArray._1
-      val valData = dataArray._2
-      val trainMaxLength = dataArray._3
-      val valMaxLegnth = dataArray._4
-
-      val batchSize = param.batchSize
-      val isTable = if (batchSize > 1) true else false
-
-      val trainSet = DataSet.array(trainData)
-           .transform(LabeledSentenceToSample(dictionaryLength))
-           .transform(SampleToBatch(batchSize = batchSize, isTable = isTable))
-      val validationSet = DataSet.array(valData)
-           .transform(LabeledSentenceToSample(dictionaryLength))
-           .transform(SampleToBatch(batchSize = batchSize, isTable = isTable))
 
       val model = if (param.modelSnapshot.isDefined) {
         Module.load[Float](param.modelSnapshot.get)
@@ -97,7 +107,7 @@ object Train {
           "dampening" -> param.dampening)
       }
 
-      Engine.init(1, param.coreNumber, false)
+      // Engine.init(1, param.coreNumber, false)
       val optimizer = Optimizer(
         model = model,
         dataset = trainSet,

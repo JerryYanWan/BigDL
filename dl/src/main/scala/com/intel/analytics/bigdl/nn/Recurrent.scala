@@ -33,7 +33,6 @@ class Recurrent[T : ClassTag] (
   val hiddenBatch = T()
 
   private def updateOutputOneSample(input: Tensor[T]): Tensor[T] = {
-    input.squeeze()
     require(input.dim == 2, "input should be a two dimension Tensor")
     require(modules.length == 2, "rnn container must include a cell and a non-linear layer")
     val module = modules(0)
@@ -81,7 +80,6 @@ class Recurrent[T : ClassTag] (
   }
 
   private def accGradParametersOneSample(input: Tensor[T], gradOutput: Tensor[T]): Unit = {
-    input.squeeze()
     val module = modules(0)
     val transform = modules(1)
 
@@ -123,7 +121,6 @@ class Recurrent[T : ClassTag] (
   }
 
   private def updateGradInputOneSample(input: Tensor[T], gradOutput: Tensor[T]): Tensor[T] = {
-    input.squeeze()
     val module = modules(0)
     val transform = modules(1)
     val _gradInput = Tensor[T](input.size).zero

@@ -17,6 +17,7 @@
 
 package com.intel.analytics.bigdl.optim
 
+import com.intel.analytics.bigdl.Criterion
 import com.intel.analytics.bigdl.nn.{CrossEntropyCriterion, LogSoftMax}
 import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.nn.abstractnn.Activity
@@ -199,11 +200,10 @@ class LossResult(private var loss: Float, private var count: Int)
 
 class Loss[@specialized(Float, Double)T: ClassTag]
 (implicit ev: TensorNumeric[T]) extends ValidationMethod[T] {
-  val criterion = CrossEntropyCriterion[T]()
+  val criterion = CrossEntropyCriterion[T](squeezeFlag = true)
   override def apply(output: Activity, target: Activity): LossResult = {
     val _output = output.asInstanceOf[Tensor[T]].squeeze()
-    val _target = target.asInstanceOf[Tensor[T]].squeeze()
-    val loss = criterion.forward(_output, _target).asInstanceOf[Float]
+    val loss = criterion.forward(_output, target).asInstanceOf[Float]
     var count = 1
 
     new LossResult(loss, count)

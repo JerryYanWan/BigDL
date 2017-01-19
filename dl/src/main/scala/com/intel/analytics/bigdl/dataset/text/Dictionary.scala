@@ -17,9 +17,12 @@
 
 package com.intel.analytics.bigdl.dataset.text
 
-import java.io.{File, Serializable}
+import java.io.{File, PrintWriter, Serializable}
 
 import org.apache.log4j.Logger
+import org.apache.log4j.spi.LoggerFactory
+import org.apache.spark.rdd.RDD
+
 import scala.util.Random
 
  /**
@@ -70,7 +73,37 @@ class Dictionary()
        logger.info(x))
    }
 
-   def this(sentences: Array[Array[String]],
+   def save(saveFolder: String): Unit = {
+     val saveTo = new File(saveFolder)
+     new PrintWriter(saveTo.getAbsolutePath + "/dictionary.txt") {
+       write(word2Index().mkString("\n")); close
+     }
+
+     new PrintWriter(saveTo.getAbsolutePath + "/discard.txt") {
+       write(discardVocab().mkString("\n")); close
+     }
+     logger.info("save created dictionary.txt and discard.txt to" +
+       s"${saveTo.getAbsolutePath}")
+   }
+
+   def this(dataset: RDD[Array[String]], vocabSize: Int) = {
+     this()
+     val words = dataset.flatMap(x => x)
+     logger.info(s"${words.count()} words and" +
+       s"${dataset.count()} sentences processed")
+     val freqDict = words
+         .map(w => (w, 1))
+       .reduceByKey(_ + _)
+       .collect().sortBy(_._2)
+     val length = math.min(vocabSize, freqDict.length)
+     _vocabulary = freqDict.drop(freqDict.length - length).map(_._1)
+     _vocabSize = _vocabulary.length
+     _word2index = _vocabulary.zipWithIndex.toMap
+     _index2word = _word2index.map(x => (x._2, x._1))
+     _discardVocab = freqDict.take(freqDict.length - length).map(_._1)
+     _discardSize = _discardVocab.length
+   }
+   def this(sentences: Iterator[Array[String]],
             vocabSize: Int) = {
      this()
      val freqDict = sentences
@@ -114,7 +147,9 @@ class Dictionary()
      _discardSize = _discardVocab.length
    }
 
-   val logger = Logger.getLogger(getClass)
+   @transient
+   private val logger = Logger.getLogger(getClass)
+
    private var _vocabSize: Int = 0
    private var _discardSize: Int = 0
    private var _word2index: Map[String, Int] = null
@@ -124,9 +159,10 @@ class Dictionary()
 }
 
 object Dictionary {
-  def apply(sentences: Array[Array[String]],
-            vocabSize: Int = 10000)
+  def apply[S <: Iterator[Array[String]]](sentences: S, vocabSize: Int)
   : Dictionary = new Dictionary(sentences, vocabSize)
   def apply(directory: String)
   : Dictionary = new Dictionary(directory)
+  def apply(dataset: RDD[Array[String]], vocabSize: Int = 10000)
+  : Dictionary = new Dictionary(dataset, vocabSize)
 }

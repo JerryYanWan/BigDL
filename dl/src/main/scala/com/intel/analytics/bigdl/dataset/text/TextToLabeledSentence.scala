@@ -20,30 +20,33 @@ package com.intel.analytics.bigdl.dataset.text
 import com.intel.analytics.bigdl.dataset.Transformer
 
 import scala.collection.Iterator
-import scala.collection.mutable.ArrayBuffer
 
-import org.apache.spark.SparkContext
-import org.apache.spark.sql._
-
-import smile.nlp.tokenizer.{SimpleSentenceSplitter, SimpleTokenizer}
-
-  /**
-  * Transformer that tokenizes a Document (article)
-  * into a Seq[Seq[String]]
-  *
-  */
-
-class DocumentTokenizer() extends Transformer[String, Array[String]] {
-  val sentenceStart = Array("SENTENCE_START")
-  val sentenceEnd = Array("SENTENCE_END")
-  override def apply(prev: Iterator[String]): Iterator[Array[String]] =
-    prev.map(x => {
-      val tokenizer = new SimpleTokenizer(true)
-      val words = tokenizer.split(x)
-      sentenceStart ++ words ++ sentenceEnd
-    })
+object TextToLabeledSentence {
+  def apply(dictionary: Dictionary)
+  : TextToLabeledSentence =
+    new TextToLabeledSentence(dictionary)
 }
 
-object DocumentTokenizer {
-  def apply(): DocumentTokenizer = new DocumentTokenizer()
+class TextToLabeledSentence(dictionary: Dictionary)
+  extends Transformer[Array[String], LabeledSentence[Float]] {
+  private val buffer = new LabeledSentence[Float]()
+
+  override def apply(prev: Iterator[Array[String]]): Iterator[LabeledSentence[Float]] = {
+    prev.map(sentence => {
+      val indexes = sentence.map(x =>
+      dictionary.word2Index().getOrElse(x, dictionary.vocabSize()))
+      val nWords = indexes.length - 1
+      val data = indexes.take(nWords)
+      val label = indexes.drop(1)
+      val input = new Array[Float](nWords)
+      val target = new Array[Float](nWords)
+      var i = 0
+      while (i < nWords) {
+        input(i) = data(i).toFloat
+        target(i) = label(i).toFloat
+        i += 1
+      }
+      buffer.copy(input, target)
+    })
+  }
 }

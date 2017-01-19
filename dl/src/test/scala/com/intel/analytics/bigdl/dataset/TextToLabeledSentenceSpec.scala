@@ -24,9 +24,12 @@ import com.intel.analytics.bigdl.utils.Engine
 import org.apache.spark.SparkContext
 import org.scalatest.{FlatSpec, Matchers}
 
-class DocumentTokenizerSpec extends FlatSpec with Matchers {
+import scala.collection.mutable.ArrayBuffer
+import scala.io.Source
 
-  "DocumentTokenizerSpec" should "tokenizes articles correctly" in {
+class TextToLabeledSentenceSpec extends FlatSpec with Matchers {
+
+  "TextToLabeledSentenceSpec" should "indexes sentences correctly on Spark" in {
     val tmpFile = java.io.File
       .createTempFile("UnitTest", "DocumentTokenizerSpec").getPath
 
@@ -45,19 +48,39 @@ class DocumentTokenizerSpec extends FlatSpec with Matchers {
     val sc = new SparkContext("local[1]", "DocumentTokenizer")
     val tokens = DataSet.rdd(sc.textFile(tmpFile)
       .filter(!_.isEmpty)).transform(DocumentTokenizer())
-    val output = tokens.toDistributed().data(train = false).collect()
+    val output = tokens.toDistributed().data(train = false)
+    val dictionary = Dictionary(output, 100)
+    val labeledSentences = tokens.transform(TextToLabeledSentence(dictionary))
+      .toDistributed().data(false).collect()
 
-    var count = 0
-    println("tokenized sentences:")
-    output.foreach(x => {
-      count += x.length
-      println(x.mkString(" "))
+  }
+  "TextToLabeledSentenceSpec" should "indexes sentences correctly on Local" in {
+    val tmpFile = java.io.File
+      .createTempFile("UnitTest", "DocumentTokenizerSpec").getPath
+
+    val sentence1 = "Enter Barnardo and Francisco, two sentinels."
+    val sentence2 = "Who’s there?"
+    val sentence3 = "I think I hear them. Stand ho! Who is there?"
+    val sentence4 = "The Dr. lives in a blue-painted box."
+
+    val sentences = Array(sentence1, sentence2, sentence3, sentence4)
+
+    new PrintWriter(tmpFile) {
+      write(sentences.mkString("\n")); close
+    }
+
+    val logData = Source.fromFile(tmpFile).getLines().toArray
+    val tokens = DataSet.array(logData
+      .filter(!_.isEmpty)).transform(DocumentTokenizer())
+    val output = tokens.toLocal().data(train = false)
+
+    val dictionary = Dictionary(output, 100)
+    val labeledSentences = tokens.transform(TextToLabeledSentence(dictionary))
+      .toLocal().data(false)
+    labeledSentences.foreach(x => {
+      println("input = " + x.data().mkString(","))
+      println("target = " + x.label().mkString(","))
     })
 
-    val numOfSents = 4
-    val numOfWords = 33
-
-    output.length should be (numOfSents)
-    count should be (numOfWords)
   }
 }

@@ -21,7 +21,7 @@ import java.io.File
 
 import com.intel.analytics.bigdl._
 import com.intel.analytics.bigdl.dataset.{DataSet, SampleToBatch}
-import com.intel.analytics.bigdl.dataset.text.{Dictionary, DocumentTokenizer, LabeledSentenceToSample, TextToLabeledSentence}
+import com.intel.analytics.bigdl.dataset.text._
 import com.intel.analytics.bigdl.nn.{CrossEntropyCriterion, Module}
 import com.intel.analytics.bigdl.optim._
 import com.intel.analytics.bigdl.utils.{Engine, T}
@@ -48,38 +48,46 @@ object Train {
 
       val (trainSet, validationSet, dictionaryLength) = if (!sc.isDefined) {
         val logData = Source.fromFile(param.dataFolder + "/" + "train.txt").getLines().toArray
-        val tokens = DataSet.array(logData.filter(!_.isEmpty))
-          .transform(DocumentTokenizer())
+        val trainSents = DataSet.array(logData
+          .filter(!_.isEmpty)).transform(SentenceSplitter())
+        val output_sents = trainSents.toLocal().data(train = false).flatMap(item => item.iterator)
+        val tokens = DataSet.array(output_sents.toArray).transform(DocumentTokenizer())
         val dictionary = Dictionary(tokens.toLocal().data(false), param.vocabSize)
         dictionary.save(param.saveFolder)
         val isTable = if (param.batchSize > 1) true else false
         println("vocabulary size = " + dictionary.vocabSize())
+        val valData = Source.fromFile(param.dataFolder + "/" + "val.txt").getLines().toArray
+        val valSents = DataSet.array(valData
+          .filter(!_.isEmpty)).transform(SentenceSplitter())
+        val valoutput = valSents.toLocal().data(train = false).flatMap(item => item.iterator)
+        val valtokens = DataSet.array(valoutput.toArray).transform(DocumentTokenizer())
         (tokens
-            .transform(TextToLabeledSentence(dictionary))
-            .transform(LabeledSentenceToSample(dictionary.vocabSize() + 1))
-            .transform(SampleToBatch(batchSize = param.batchSize, isTable = isTable)),
-          DataSet.array(Source.fromFile(param.dataFolder + "/" + "val.txt").getLines()
-            .toArray.filter(!_.isEmpty))
-            .transform(DocumentTokenizer())
+          .transform(TextToLabeledSentence(dictionary))
+          .transform(LabeledSentenceToSample(dictionary.vocabSize() + 1))
+          .transform(SampleToBatch(batchSize = param.batchSize, isTable = isTable)),
+          valtokens
             .transform(TextToLabeledSentence(dictionary))
             .transform(LabeledSentenceToSample(dictionary.vocabSize() + 1))
             .transform(SampleToBatch(batchSize = param.batchSize, isTable = isTable)),
           dictionary.vocabSize() + 1)
       } else {
-        val tokens = DataSet.rdd(sc.get.textFile(param.dataFolder + "/" + "train.txt")
-          .filter(!_.isEmpty)).transform(DocumentTokenizer())
+        val trainSents = DataSet.rdd(sc.get.textFile(param.dataFolder + "/" + "train.txt")
+          .filter(!_.isEmpty)).transform(SentenceSplitter())
+        val output_sents = trainSents.toDistributed().data(train = false).collect().flatten
+        val tokens = DataSet.rdd(sc.get.parallelize(output_sents)).transform(DocumentTokenizer())
         val dictionary = Dictionary(tokens.toDistributed().data(false),
           param.vocabSize)
         dictionary.save(param.saveFolder)
         val isTable = if (param.batchSize > 1) true else false
-
+        val valSents = DataSet.rdd(sc.get.textFile(param.dataFolder + "/" + "val.txt")
+          .filter(!_.isEmpty)).transform(SentenceSplitter())
+        val valoutput = valSents.toDistributed().data(train = false).collect().flatten
+        val valtokens = DataSet.rdd(sc.get.parallelize(valoutput)).transform(DocumentTokenizer())
         (tokens
-            .transform(TextToLabeledSentence(dictionary))
-            .transform(LabeledSentenceToSample(dictionary.vocabSize() + 1))
-            .transform(SampleToBatch(batchSize = param.batchSize, isTable = isTable)),
-          DataSet.rdd(sc.get.textFile(param.dataFolder + "/" + "val.txt")
-            .filter(!_.isEmpty))
-            .transform(DocumentTokenizer())
+          .transform(TextToLabeledSentence(dictionary))
+          .transform(LabeledSentenceToSample(dictionary.vocabSize() + 1))
+          .transform(SampleToBatch(batchSize = param.batchSize, isTable = isTable)),
+          valtokens
             .transform(TextToLabeledSentence(dictionary))
             .transform(LabeledSentenceToSample(dictionary.vocabSize() + 1))
             .transform(SampleToBatch(batchSize = param.batchSize, isTable = isTable)),

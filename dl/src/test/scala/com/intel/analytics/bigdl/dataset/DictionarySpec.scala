@@ -49,7 +49,7 @@ class DictionarySpec extends FlatSpec with Matchers {
       .filter(!_.isEmpty)).transform(DocumentTokenizer())
     val output = tokens.toDistributed().data(train = false)
 
-    val numOfWords = 21
+    val numOfWords = 23
 
     val dictionary = Dictionary(output, 100)
 
@@ -78,7 +78,7 @@ class DictionarySpec extends FlatSpec with Matchers {
       .filter(!_.isEmpty)).transform(DocumentTokenizer())
     val output = tokens.toLocal().data(train = false)
 
-    val numOfWords = 21
+    val numOfWords = 23
 
     val dictionary = Dictionary(output, 100)
 

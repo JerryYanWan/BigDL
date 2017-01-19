@@ -22,28 +22,23 @@ import com.intel.analytics.bigdl.dataset.Transformer
 import scala.collection.Iterator
 import scala.collection.mutable.ArrayBuffer
 
-import org.apache.spark.SparkContext
-import org.apache.spark.sql._
+import smile.nlp.tokenizer.SimpleSentenceSplitter
 
-import smile.nlp.tokenizer.SimpleTokenizer
 
-  /**
-  * Transformer that tokenizes a Document (article)
-  * into a Seq[Seq[String]]
-  *
-  */
-
-class DocumentTokenizer() extends Transformer[String, Array[String]] {
-  val sentenceStart = Array("SENTENCE_START")
-  val sentenceEnd = Array("SENTENCE_END")
+class SentenceSplitter() extends Transformer[String, Array[String]] {
   override def apply(prev: Iterator[String]): Iterator[Array[String]] =
     prev.map(x => {
-      val tokenizer = new SimpleTokenizer(true)
-      val words = tokenizer.split(x)
-      sentenceStart ++ words ++ sentenceEnd
+      val sentences = ArrayBuffer[String]()
+      val sentences_split = SimpleSentenceSplitter.getInstance.split(x)
+      for (i <- sentences_split.indices) {
+        sentences.append(sentences_split(i))
+      }
+      sentences.toArray
     })
 }
 
-object DocumentTokenizer {
-  def apply(): DocumentTokenizer = new DocumentTokenizer()
+object SentenceSplitter {
+  def apply(): SentenceSplitter = new SentenceSplitter()
 }
+
+

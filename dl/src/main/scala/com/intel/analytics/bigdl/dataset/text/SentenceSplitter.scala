@@ -28,13 +28,6 @@ import smile.nlp.tokenizer.SimpleSentenceSplitter
 class SentenceSplitter() extends Transformer[String, Array[String]] {
   override def apply(prev: Iterator[String]): Iterator[Array[String]] =
     prev.map(x => {
-//      val sentences = ArrayBuffer[String]()
-//      val sentences_split = SimpleSentenceSplitter.getInstance.split(x)
-//      var i = 0
-//      while (i < sentences_split.length) {
-//        sentences.append(sentences_split(i))
-//      }
-//      sentences.toArray
       SimpleSentenceSplitter.getInstance.split(x)
     })
 }

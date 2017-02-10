@@ -18,63 +18,67 @@
 package com.intel.analytics.bigdl.nn
 
 import com.intel.analytics.bigdl.Module
-import com.intel.analytics.bigdl.nn.abstractnn.TensorModule
 import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric
 
 import scala.reflect.ClassTag
 
-class TimeDistributed[T : ClassTag] (outputDim: Int, dim: Int = 2)
+/**
+ * @param timeDim the dimension for layer to roll on
+ * @param inputShape the input shape for the layer
+ * @param outputShape the output shape for the layer
+ * @param ev
+ * @tparam T
+ */
+
+class TimeDistributed[T : ClassTag] (
+  timeDim: Int = 2,
+  inputShape: Array[Int],
+  outputShape: Array[Int])
 (implicit ev: TensorNumeric[T]) extends Container[Tensor[T], Tensor[T], T] {
 
-  private val fInput: Tensor[T] = Tensor[T]()
-  private val fGradOutput: Tensor[T] = Tensor[T]()
-  private var times = 0
-  private val size: Array[Int] = new Array(2)
+  private val batchDim: Int = 1
   private var layer: Module[T] = _
-
-  @inline
-  private def getDim(input: Tensor[T]): Unit = {
-    size(0) = input.size(1)
-    size(1) = input.size(2)
-    times = input.size(dim)
-    var i = dim
-    while (i < 3) {
-      size(i - 1) = input.size(i + 1)
-      i += 1
-    }
-  }
+  private var fInput: Tensor[T] = _
+  private var fGradOutput: Tensor[T] = _
+  private var times: Int = _
+  private val outputSize: Array[Int] = Array(1) ++ outputShape
 
   override def updateOutput(input: Tensor[T]): Tensor[T] = {
-    require(input.dim == 3,
-      "TimeDistributed: input should be a 3D Tensor, e.g [batch, time, inputDim]")
+    require(input.dim >= 3,
+      "TimeDistributed: input should be at least a 3D Tensor, e.g [batch, time, inputDim]. " +
+        s"Current input.dim = ${input.dim}")
     require(modules.length == 1,
-      "TimeDistributed: can only execute one module at a time")
+      "TimeDistributed: container can only process one layer, " +
+        s"current container has ${modules.length} layers.")
 
-    getDim(input)
     layer = modules(0)
-    fInput.resize(Array(times, size(0), size(1)))
-    output.resize(Array(size(0), times, input.size(3)))
+    fInput = input.transpose(batchDim, timeDim)
+    outputSize(0) = input.size(batchDim)
+    output.resize(outputSize)
+    times = input.size(timeDim)
+
+    /**
+     * The program will roll along the timeDim.
+     * e.g. If 1 == timeDim, the layer will iterate over batchSize.
+     */
+
     var i = 1
     while (i <= times) {
-      fInput(i).copy(input.select(2, i))
-      println(fInput(i).size.mkString(","))
-      val _output = layer.updateOutput(fInput(i)).asInstanceOf[Tensor[T]]
-      println(_output.size.mkString(","))
-      output.select(2, i).copy(
-        layer.updateOutput(fInput(i)).asInstanceOf[Tensor[T]])
+      val _output = layer.updateOutput(fInput(i)).toTensor[T]
+      output.select(timeDim, i).copy(_output)
       i += 1
     }
     output
   }
 
   override def updateGradInput(input: Tensor[T], gradOutput: Tensor[T]): Tensor[T] = {
-    fGradOutput.resize(Array(times, gradOutput.size(1), gradOutput.size(3)))
+    fGradOutput = gradOutput.transpose(batchDim, timeDim)
+    gradInput.resizeAs(input)
     var i = 1
     while (i <= times) {
-      fGradOutput(i).copy(gradOutput.select(2, i))
-      val _gradInput = layer.updateGradInput(fInput(i), fGradOutput(i))
-      gradInput.select(2, i).copy(fGradOutput(i))
+      val _gradInput = layer.updateGradInput(fInput(i), fGradOutput(i)).toTensor[T]
+      gradInput.select(timeDim, i).copy(_gradInput)
       i += 1
     }
     gradInput
@@ -90,14 +94,17 @@ class TimeDistributed[T : ClassTag] (outputDim: Int, dim: Int = 2)
   }
 
   override def toString(): String = {
-    var str = "nn.TimeDistributed"
+    val str = "nn.TimeDistributed"
     str
   }
 }
 
 object TimeDistributed {
-  def apply[@specialized(Float, Double) T: ClassTag](outputDim: Int, dim: Int = 2)
+  def apply[@specialized(Float, Double) T: ClassTag](
+    timeDim: Int = 2,
+    inputShape: Array[Int],
+    outputShape: Array[Int])
   (implicit ev: TensorNumeric[T]): TimeDistributed[T] = {
-    new TimeDistributed[T](outputDim, dim)
+    new TimeDistributed[T](timeDim, inputShape, outputShape)
   }
 }

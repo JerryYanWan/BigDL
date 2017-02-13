@@ -27,52 +27,54 @@ import scala.reflect.ClassTag
  * This layer is intended to wrap layers that do not support higher Dimensions.
  * For instance, the Linear layer do not accept 3D input. The TimeDistributed
  * Layer can wrap the Linear layer, accept 3D input, and feed a sequence of 2D
- * Tensor to the wrapped Linear layer along the given timeDim.
+ * Tensor to the wrapped Linear layer by reshaping the first two dimensions.
  *
- * @param timeDim the dimension for layer to roll on
  * @param ev
  * @tparam T
  */
 
-class TimeDistributed[T : ClassTag] (
-  timeDim: Int = 2)
+class TimeDistributed[T : ClassTag] ()
 (implicit ev: TensorNumeric[T]) extends Container[Tensor[T], Tensor[T], T] {
 
-  private val batchDim: Int = 1
   private var layer: Module[T] = _
   private var fInput: Tensor[T] = _
   private var fGradOutput: Tensor[T] = _
-  private var times: Int = _
+  private var inputSize: Array[Int] = _
+  private var gradOutputSize: Array[Int] = _
   private var outputSize: Array[Int] = _
 
-  /**
-   * copy the output.size to outputSize
-   * For instance:
-   * the input.size = [5, 3, 4]
-   * the weight shape of the linear layer is [4, 6]
-   * the final output.size = [5, 3, 6]
-   *
-   * Given the timeDim = 2, each iteration will yield
-   * an output with size [5, 6]. Thus the two while loops
-   * will insert the entry of timeDim into output size to
-   * form the final output [5, 3, 6]
-   * @param output
-   */
-  private def getSize(output: Tensor[T]): Unit = {
-    if (outputSize == null) {
-      outputSize = Array(1) ++ output.size
-    }
-    var j = 0
-    while (j + 1 < timeDim) {
-      outputSize(j) = output.size(j + 1)
-      j += 1
-    }
-    outputSize(j) = times
-    while (j < output.size.length) {
-      outputSize(j + 1) = output.size(j + 1)
+  private def combine(src: Array[Int], target: Array[Int]): Unit = {
+    require(src.length == target.length + 1,
+      "In Recurrent: combine method requires src.length == target.length + 1" +
+        s" Current src.length = ${src.length}" +
+        s" Current target.length = ${target.length}")
+
+    target(0) = src(0) * src(1)
+    var j = 1
+    while (j < target.length) {
+      target(j) = src(j + 1)
       j += 1
     }
   }
+
+  private def split(src: Array[Int], target: Array[Int], dim1: Int, dim2: Int): Unit = {
+    require(src.length == target.length - 1,
+      "In Recurrent: split method requires src.length == target.length - 1" +
+        s" Current src.length = ${src.length}" +
+        s" Current target.length = ${target.length}")
+    require(dim1 * dim2 == src(0),
+    "In Recurrent: split method requires dim1 * dim2 == src(0), " +
+      s"Current dim1 = ${dim1}, dim2 = ${dim2}, src(0) = ${src(0)}")
+
+    target(0) = dim1
+    target(1) = dim2
+    var j = 1
+    while (j < src.length) {
+      target(j + 1) = src(j)
+      j += 1
+    }
+  }
+
 
   override def updateOutput(input: Tensor[T]): Tensor[T] = {
     require(input.dim >= 3,
@@ -83,51 +85,38 @@ class TimeDistributed[T : ClassTag] (
         s"current container has ${modules.length} layers.")
 
     layer = modules(0)
-    fInput = input.transpose(batchDim, timeDim)
-    times = input.size(timeDim)
+
+    if (inputSize == null) {
+      inputSize = new Array[Int](input.size.length - 1)
+    }
+    if (outputSize == null) {
+      outputSize = new Array[Int](input.size.length)
+    }
 
     /**
-     * The program will roll along the timeDim.
-     * e.g. If 1 == timeDim, the layer will iterate over batchSize.
-     *
-     * Since the output.size cannot be retrieved initially, we have
-     * to execute at least one forward calculation to get the temporal output size.
+     * combine: [B, T, D] => [B * T, D]
+     * split:   [B * T, D] => [B, T, D]
      */
-
-    var i = 1
-    var _output = layer.updateOutput(fInput(i)).toTensor[T]
-    getSize(_output)
-    outputSize(batchDim - 1) = input.size(batchDim)
-    output.resize(outputSize)
-    output.select(timeDim, i).copy(_output)
-    i += 1
-    while (i <= times) {
-      _output = layer.updateOutput(fInput(i)).toTensor[T]
-      output.select(timeDim, i).copy(_output)
-      i += 1
-    }
+    combine(input.size, inputSize)
+    fInput = input.reshape(inputSize)
+    val _output = layer.updateOutput(fInput).toTensor[T]
+    split(_output.size, outputSize, input.size(1), input.size(2))
+    output = _output.reshape(outputSize)
     output
   }
 
   override def updateGradInput(input: Tensor[T], gradOutput: Tensor[T]): Tensor[T] = {
-    fGradOutput = gradOutput.transpose(batchDim, timeDim)
-    gradInput.resizeAs(input)
-    var i = 1
-    while (i <= times) {
-      val _gradInput = layer.updateGradInput(fInput(i), fGradOutput(i)).toTensor[T]
-      gradInput.select(timeDim, i).copy(_gradInput)
-      i += 1
-    }
+    gradOutputSize = inputSize
+    combine(gradOutput.size, gradOutputSize)
+    fGradOutput = gradOutput.reshape(gradOutputSize)
+    val _gradInput = layer.updateGradInput(fInput, fGradOutput).toTensor[T]
+    gradInput = _gradInput.reshape(input.size)
     gradInput
   }
 
   override def accGradParameters(input: Tensor[T], gradOutput: Tensor[T],
                                  scale: Double = 1.0): Unit = {
-    var i = 1
-    while (i <= times) {
-      layer.accGradParameters(fInput(i), fGradOutput(i))
-      i += 1
-    }
+    layer.accGradParameters(fInput, fGradOutput)
   }
 
   override def toString(): String = {
@@ -137,9 +126,8 @@ class TimeDistributed[T : ClassTag] (
 }
 
 object TimeDistributed {
-  def apply[@specialized(Float, Double) T: ClassTag](
-    timeDim: Int = 2)
+  def apply[@specialized(Float, Double) T: ClassTag]()
   (implicit ev: TensorNumeric[T]): TimeDistributed[T] = {
-    new TimeDistributed[T](timeDim)
+    new TimeDistributed[T]()
   }
 }

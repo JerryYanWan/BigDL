@@ -26,25 +26,27 @@ import scala.math.abs
 import scala.util.Random
 
 class TimeDistributedSpec extends FlatSpec with Matchers {
-  "A TimeDistributed Module " should "generate correct output and grad for Linear" +
-    " when time dimension is 2" in {
+  "A TimeDistributed Module " should "generate correct output and grad for Linear in 3D input " +
+    "along first dimension" in {
     val batchSize = 5
-    val times = 2
+    val times = 5
     val inputDim = 3
     val outputDim = 4
-    val timeDim = 2
+    val timeDim = 1
 
     val input = Tensor[Float](Array(batchSize, times, inputDim)).randn()
-    val linear = Linear[Float](inputDim, outputDim)
+    val linear1 = Linear[Float](inputDim, outputDim)
+    val linear2 = Linear[Float](inputDim, outputDim)
+    linear2.weight.map(linear1.weight, (a, b) => {b})
+    linear2.bias.map(linear1.bias, (a, b) => {b})
     val model = Sequential[Float]()
-      .add(TimeDistributed[Float](
-        timeDim = timeDim)
-        .add(linear))
+      .add(TimeDistributed[Float]()
+        .add(linear1))
 
     val output = model.forward(input).toTensor[Float].clone
     var i = 1
     while (i <= times) {
-      val expectedOut = linear.forward(input.select(timeDim, i))
+      val expectedOut = linear2.forward(input.select(timeDim, i))
       output.select(timeDim, i) should be (expectedOut)
       i += 1
     }
@@ -53,30 +55,33 @@ class TimeDistributedSpec extends FlatSpec with Matchers {
     val gradInput = model.backward(input, gradOutput).toTensor[Float].clone
     i = 1
     while (i <= times) {
-      val expectedOut = linear.backward(input.select(timeDim, i), gradOutput.select(timeDim, i))
+      val expectedOut = linear2.backward(input.select(timeDim, i), gradOutput.select(timeDim, i))
       gradInput.select(timeDim, i) should be (expectedOut)
       i += 1
     }
   }
 
-  "A TimeDistributed Module " should "generate correct output and grad for Linear " +
-    "when time dimension is 1" in {
+  "A TimeDistributed Module " should "generate correct output and grad for Linear in 3D input " +
+    "along second dimension" in {
     val batchSize = 5
-    val times = 2
+    val times = 3
     val inputDim = 3
     val outputDim = 4
-    val timeDim = 1
+    val timeDim = 2
+
     val input = Tensor[Float](Array(batchSize, times, inputDim)).randn()
-    val linear = Linear[Float](inputDim, outputDim)
+    val linear1 = Linear[Float](inputDim, outputDim)
+    val linear2 = Linear[Float](inputDim, outputDim)
+    linear2.weight.map(linear1.weight, (a, b) => {b})
+    linear2.bias.map(linear1.bias, (a, b) => {b})
     val model = Sequential[Float]()
-      .add(TimeDistributed[Float](
-        timeDim = timeDim)
-        .add(linear))
+      .add(TimeDistributed[Float]()
+        .add(linear1))
 
     val output = model.forward(input).toTensor[Float].clone
     var i = 1
     while (i <= times) {
-      val expectedOut = linear.forward(input.select(timeDim, i))
+      val expectedOut = linear2.forward(input.select(timeDim, i))
       output.select(timeDim, i) should be (expectedOut)
       i += 1
     }
@@ -85,7 +90,7 @@ class TimeDistributedSpec extends FlatSpec with Matchers {
     val gradInput = model.backward(input, gradOutput).toTensor[Float].clone
     i = 1
     while (i <= times) {
-      val expectedOut = linear.backward(input.select(timeDim, i), gradOutput.select(timeDim, i))
+      val expectedOut = linear2.backward(input.select(timeDim, i), gradOutput.select(timeDim, i))
       gradInput.select(timeDim, i) should be (expectedOut)
       i += 1
     }
@@ -100,72 +105,23 @@ class TimeDistributedSpec extends FlatSpec with Matchers {
     val timeDim = 2
 
     val input = Tensor[Float](Array(batchSize, times, inputDim)).randn()
-    val logSoftMax = LogSoftMax[Float]()
+    val gradOutput = Tensor[Float](Array(batchSize, times, outputDim)).randn()
+    val logSoftMax1 = LogSoftMax[Float]()
+    val logSoftMax2 = LogSoftMax[Float]()
     val model = Sequential[Float]()
       .add(TimeDistributed[Float]()
-        .add(logSoftMax))
+        .add(logSoftMax1))
 
     val output = model.forward(input).toTensor[Float].clone
+    val gradInput = model.backward(input, gradOutput).toTensor[Float].clone
     var i = 1
     while (i <= times) {
-      val expectedOut = logSoftMax.forward(input.select(timeDim, i))
+      val expectedOut = logSoftMax2.forward(input.select(timeDim, i))
       output.select(timeDim, i) should be (expectedOut)
+      val expectedGradInput = logSoftMax2.backward(
+        input.select(timeDim, i), gradOutput.select(timeDim, i))
+      gradInput.select(timeDim, i) should be (expectedGradInput)
       i += 1
     }
-
-    val gradOutput = Tensor[Float](Array(batchSize, times, outputDim)).randn()
-    val gradInput = model.backward(input, gradOutput).toTensor[Float].clone
-    i = 1
-    while (i <= times) {
-      val expectedOut = logSoftMax.backward(input.select(timeDim, i), gradOutput.select(timeDim, i))
-      gradInput.select(timeDim, i) should be (expectedOut)
-      i += 1
-    }
-  }
-
-  "A TimeDistributed Module " should "generate correct output and grad for SpatialConvolution" in {
-    val seed = 100
-    RNG.setSeed(seed)
-
-    val timeDim = 1
-    val nInputPlane = 3
-    val nOutputPlane = 64
-    val kW = 11
-    val kH = 11
-    val dW = 4
-    val dH = 4
-    val padW = 2
-    val padH = 2
-    val layer1 = new SpatialConvolution[Double](nInputPlane, nOutputPlane, kW, kH, dW, dH,
-      padW, padH)
-    val layer2 = new SpatialConvolution[Double](nInputPlane, nOutputPlane, kW, kH, dW, dH,
-      padW, padH)
-    layer2.weight.copy(layer1.weight)
-    layer2.bias.copy(layer1.bias)
-    val outputWidth = (224 + 2 * padW - kW) / dW + 1
-    val outputHeight = (224 + 2 * padH - kH) / dH + 1
-    Random.setSeed(seed)
-    val input1 = Tensor[Double](16, 3, 224, 224).apply1(e => Random.nextDouble())
-    val input2 = Tensor[Double]().resizeAs(input1).copy(input1)
-
-    val wrapper = TimeDistributed[Double](
-      timeDim = timeDim)
-      .add(layer2)
-    val output1 = layer1.updateOutput(input1)
-    val output2 = wrapper.updateOutput(input2).toTensor[Double]
-
-    output1.map(output2, (a, x) => {
-      a should be (x)
-      x
-    })
-
-    val gradOutput = Tensor[Double](output1.size).randn()
-    val gradInput1 = layer1.updateGradInput(input1, gradOutput)
-    val gradInput2 = wrapper.updateGradInput(input1, gradOutput)
-
-    gradInput1.map(gradInput2, (a, x) => {
-      a should be (x)
-      x
-    })
   }
 }

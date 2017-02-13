@@ -38,8 +38,7 @@ class TimeDistributedSpec extends FlatSpec with Matchers {
     val linear = Linear[Float](inputDim, outputDim)
     val model = Sequential[Float]()
       .add(TimeDistributed[Float](
-        timeDim = timeDim,
-        inputShape = Array(times, inputDim))
+        timeDim = timeDim)
         .add(linear))
 
     val output = model.forward(input).toTensor[Float].clone
@@ -71,8 +70,7 @@ class TimeDistributedSpec extends FlatSpec with Matchers {
     val linear = Linear[Float](inputDim, outputDim)
     val model = Sequential[Float]()
       .add(TimeDistributed[Float](
-        timeDim = timeDim,
-        inputShape = Array(2, 3))
+        timeDim = timeDim)
         .add(linear))
 
     val output = model.forward(input).toTensor[Float].clone
@@ -104,7 +102,7 @@ class TimeDistributedSpec extends FlatSpec with Matchers {
     val input = Tensor[Float](Array(batchSize, times, inputDim)).randn()
     val logSoftMax = LogSoftMax[Float]()
     val model = Sequential[Float]()
-      .add(TimeDistributed[Float](inputShape = Array(times, inputDim))
+      .add(TimeDistributed[Float]()
         .add(logSoftMax))
 
     val output = model.forward(input).toTensor[Float].clone
@@ -151,8 +149,7 @@ class TimeDistributedSpec extends FlatSpec with Matchers {
     val input2 = Tensor[Double]().resizeAs(input1).copy(input1)
 
     val wrapper = TimeDistributed[Double](
-      timeDim = timeDim,
-      inputShape = Array(3, 224, 224))
+      timeDim = timeDim)
       .add(layer2)
     val output1 = layer1.updateOutput(input1)
     val output2 = wrapper.updateOutput(input2).toTensor[Double]

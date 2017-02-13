@@ -30,14 +30,12 @@ import scala.reflect.ClassTag
  * Tensor to the wrapped Linear layer along the given timeDim.
  *
  * @param timeDim the dimension for layer to roll on
- * @param inputShape the input shape for the layer
  * @param ev
  * @tparam T
  */
 
 class TimeDistributed[T : ClassTag] (
-  timeDim: Int = 2,
-  inputShape: Array[Int])
+  timeDim: Int = 2)
 (implicit ev: TensorNumeric[T]) extends Container[Tensor[T], Tensor[T], T] {
 
   private val batchDim: Int = 1
@@ -63,16 +61,16 @@ class TimeDistributed[T : ClassTag] (
   private def getSize(output: Tensor[T]): Unit = {
     if (outputSize == null) {
       outputSize = Array(1) ++ output.size
-      var j = 0
-      while (j + 1 < timeDim) {
-        outputSize(j) = output.size(j + 1)
-        j += 1
-      }
-      outputSize(j) = times
-      while (j < output.size.length) {
-        outputSize(j + 1) = output.size(j + 1)
-        j += 1
-      }
+    }
+    var j = 0
+    while (j + 1 < timeDim) {
+      outputSize(j) = output.size(j + 1)
+      j += 1
+    }
+    outputSize(j) = times
+    while (j < output.size.length) {
+      outputSize(j + 1) = output.size(j + 1)
+      j += 1
     }
   }
 
@@ -140,9 +138,8 @@ class TimeDistributed[T : ClassTag] (
 
 object TimeDistributed {
   def apply[@specialized(Float, Double) T: ClassTag](
-    timeDim: Int = 2,
-    inputShape: Array[Int])
+    timeDim: Int = 2)
   (implicit ev: TensorNumeric[T]): TimeDistributed[T] = {
-    new TimeDistributed[T](timeDim, inputShape)
+    new TimeDistributed[T](timeDim)
   }
 }

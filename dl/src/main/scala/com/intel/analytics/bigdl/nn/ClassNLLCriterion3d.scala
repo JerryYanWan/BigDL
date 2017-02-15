@@ -35,38 +35,73 @@ class ClassNLLCriterion3d[T : ClassTag](
   timeDim: Int = 2)
 (implicit ev: TensorNumeric[T]) extends ClassNLLCriterion[T] {
 
-  private val batchDim: Int = 1
   private var fInput: Tensor[T] = _
   private var fTarget: Tensor[T] = _
-  private var times: Int = _
+  private var inputSize: Array[Int] = _
+  private var targetSize: Array[Int] = _
+
+  private def combine(src: Array[Int], target: Array[Int]): Unit = {
+    require(src.length == target.length + 1,
+      "TimeDistributed: combine method requires src.length == target.length + 1" +
+        s" Current src.length = ${src.length}" +
+        s" Current target.length = ${target.length}")
+
+    target(0) = src(0) * src(1)
+    var j = 1
+    while (j < target.length) {
+      target(j) = src(j + 1)
+      j += 1
+    }
+  }
 
   override def updateOutput(input: Tensor[T], target: Tensor[T]): T = {
     require(input.dim() >= 3,
       "input should be at least a 3D Tensor, e.g.[batch, time, inputDim]. "
         + s"Current input.dim = ${input.dim}")
 
-    fInput = input.transpose(batchDim, timeDim)
-    fTarget = target.transpose(batchDim, timeDim)
-    times = input.size(timeDim)
+//    fInput = input.transpose(batchDim, timeDim).contiguous
+//    fTarget = target.transpose(batchDim, timeDim).contiguous
+//    times = input.size(timeDim)
 
-    var i = 1
-    while (i <= times) {
-      val _output = super.updateOutput(fInput(i), fTarget(i))
-      output = ev.plus(output, _output)
-      i += 1
+    if (inputSize == null) {
+      inputSize = new Array[Int](input.size.length - 1)
     }
-    output = ev.divide(output, ev.fromType[Int](times))
+    if (targetSize == null) {
+      targetSize = new Array[Int](target.size.length - 1)
+    }
+
+    combine(input.size, inputSize)
+    combine(target.size, targetSize)
+    fInput = input.reshape(inputSize)
+    fTarget = target.reshape(targetSize)
+    output = super.updateOutput(fInput, fTarget)
     output
   }
 
   override def updateGradInput(input: Tensor[T], target: Tensor[T]): Tensor[T] = {
-    gradInput.resizeAs(input)
-    var i = 1
-    while (i <= times) {
-      val _gradInput = super.updateGradInput(fInput(i), fTarget(i)).toTensor[T]
-      gradInput.select(timeDim, i).copy(_gradInput)
-      i += 1
+    require(input.dim() >= 3,
+      "input should be at least a 3D Tensor, e.g.[batch, time, inputDim]. "
+        + s"Current input.dim = ${input.dim}")
+
+    if (inputSize == null) {
+      inputSize = new Array[Int](input.size.length - 1)
     }
+    if (targetSize == null) {
+      targetSize = new Array[Int](target.size.length - 1)
+    }
+
+    combine(input.size, inputSize)
+    combine(target.size, targetSize)
+    fInput = input.reshape(inputSize)
+    fTarget = target.reshape(targetSize)
+    val _gradInput = super.updateGradInput(fInput, fTarget).toTensor[T]
+
+    require(_gradInput.nElement() == input.nElement(),
+      "updateGradInput: layer gradInput size should be matchable" +
+        s"to input size, current layer gradInput size dimensions is ${_gradInput.nElement()}," +
+        s"input size dimensions is ${input.nElement()}")
+
+    gradInput = _gradInput.reshape(input.size)
     gradInput
   }
 

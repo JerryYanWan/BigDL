@@ -134,8 +134,8 @@ class DeepSpeech2[T : ClassTag](depth: Int = 1)
       x
     })
 
-    logger.warn("model inference finish!")
-    logger.warn("total relative error is : " + accDiff)
+    logger.info("model inference finish!")
+    logger.info("total relative error is : " + accDiff)
   }
 
 
@@ -183,8 +183,10 @@ class DeepSpeech2[T : ClassTag](depth: Int = 1)
 object DeepSpeech2 {
 
   def main(args: Array[String]): Unit = {
-    Logger.getLogger("org").setLevel(Level.WARN)
-    Logger.getLogger("com").setLevel(Level.WARN)
+//    Logger.getLogger("org").setLevel(Level.WARN)
+//    Logger.getLogger("com").setLevel(Level.WARN)
+    Logger.getLogger("org").setLevel(Level.OFF)
+    Logger.getLogger("akka").setLevel(Level.OFF)
     val logger = Logger.getLogger(getClass)
 
     val spark = SparkSession.builder().master("local").appName("test").getOrCreate()
@@ -211,14 +213,14 @@ object DeepSpeech2 {
      *    for my small test, I set it to be 66.
      *********************************************************
      */
-    val depth = 9
+    val depth = 6
     val convFeatureSize = 1152
     val birnnFeatureSize = 1152
     val linear1FeatureSize = 2304
     val linear2FeatureSize = 1152
     val timeSeqLen = 66
 
-    logger.warn("load in inputs and expectOutputs ..")
+    logger.info("load in inputs and expectOutputs ..")
     val inputs = spark.sparkContext.textFile(inputPath)
       .map(_.toDouble).collect()
     val expectOutputs =
@@ -235,12 +237,12 @@ object DeepSpeech2 {
      *************************************************************************
      */
 
-    logger.warn("load in conv weights ..")
+    logger.info("load in conv weights ..")
     val convWeights =
       spark.sparkContext.textFile(convPath)
         .map(_.split(',').map(_.toDouble)).flatMap(t => t).collect()
 
-    logger.warn("load in birnn weights ..")
+    logger.info("load in birnn weights ..")
     val weightsBirnn = new Array[Array[Double]](depth)
     for (i <- 0 until depth) {
       val birnnOrigin =
@@ -249,13 +251,13 @@ object DeepSpeech2 {
       weightsBirnn(i) = convertBiRNN(birnnOrigin, birnnFeatureSize)
     }
 
-    logger.warn("load in linear1 weights ..")
+    logger.info("load in linear1 weights ..")
     val linearOrigin0 =
       spark.sparkContext.textFile(linear1Path)
         .map(_.split(",").map(_.toDouble)).flatMap(t => t).collect()
     val weightsLinear0 = convertLinear(linearOrigin0, linear1FeatureSize)
 
-    logger.warn("load in linear2 weights ..")
+    logger.info("load in linear2 weights ..")
     val linearOrigin1 =
       spark.sparkContext.textFile(linear2Path)
         .map(_.split(",").map(_.toDouble)).flatMap(t => t).collect()
@@ -274,7 +276,7 @@ object DeepSpeech2 {
     dp2.setLinear0Weight(weightsLinear0, 0)
     dp2.setLinear0Weight(weightsLinear1, 1)
 
-    logger.warn("run the model ..")
+    logger.info("run the model ..")
     dp2.evaluate(inputs, convert(expectOutputs, timeSeqLen), logger)
   }
 

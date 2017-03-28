@@ -33,8 +33,11 @@ class RnnCell[T : ClassTag] (
   extends Cell[T](Array(hiddenSize)) {
 
   val parallelTable = ParallelTable[T]()
-  val i2h = Linear[T](inputSize, hiddenSize, withBias = false)
-  val h2h = Linear[T](hiddenSize, hiddenSize)
+  val i2h = Sequential()
+    .add(Linear[T](inputSize, hiddenSize, withBias = false))
+    .add(BatchNormalizationBRNN[T]())
+  val h2h = Sequential()
+    .add(Linear[T](hiddenSize, hiddenSize))
   parallelTable.add(i2h)
   parallelTable.add(h2h)
   val cAddTable = CAddTable[T]()

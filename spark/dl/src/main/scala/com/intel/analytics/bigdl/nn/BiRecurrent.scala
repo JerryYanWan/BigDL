@@ -25,24 +25,31 @@ import com.intel.analytics.bigdl.utils.{T, Table}
 import scala.reflect.ClassTag
 
 class BiRecurrent[T : ClassTag] (
-  merge: AbstractModule[Table, Tensor[T], T] = null)
+  merge: AbstractModule[Table, Tensor[T], T] = null, isCloneInput: Boolean = true)
   (implicit ev: TensorNumeric[T]) extends Container[Tensor[T], Tensor[T], T] {
 
   val timeDim = 2
+  val featDim = 3
   val layer: Recurrent[T] = Recurrent[T]()
   val revLayer: Recurrent[T] = Recurrent[T]()
   val birnn = Sequential[T]()
-      .add(ConcatTable()
-        .add(Identity[T]())
-        .add(Identity[T]()))
-      .add(ParallelTable[T]()
-        .add(layer)
-        .add(Sequential[T]()
-          .add(Reverse[T](timeDim))
-          .add(revLayer)
-          .add(Reverse[T](timeDim))))
-    if (merge == null) birnn.add(CAddTable[T]())
-    else birnn.add(merge)
+
+  if (isCloneInput) {
+    birnn.add(ConcatTable()
+      .add(Identity[T]())
+      .add(Identity[T]()))
+  } else {
+    birnn.add(BifurcateSplitTable[T](featDim))
+  }
+  birnn
+    .add(ParallelTable[T]()
+      .add(layer)
+      .add(Sequential[T]()
+        .add(Reverse[T](timeDim))
+        .add(revLayer)
+        .add(Reverse[T](timeDim))))
+  if (merge == null) birnn.add(CAddTable[T]())
+  else birnn.add(merge)
 
   override def add(module: AbstractModule[_ <: Activity, _ <: Activity, T]):
     BiRecurrent.this.type = {
@@ -132,8 +139,9 @@ class BiRecurrent[T : ClassTag] (
 
 object BiRecurrent {
   def apply[@specialized(Float, Double) T: ClassTag](
-    merge: AbstractModule[Table, Tensor[T], T] = null)
+    merge: AbstractModule[Table, Tensor[T], T] = null,
+    isCloneInput: Boolean = true)
     (implicit ev: TensorNumeric[T]) : BiRecurrent[T] = {
-    new BiRecurrent[T](merge)
+    new BiRecurrent[T](merge, isCloneInput)
   }
 }

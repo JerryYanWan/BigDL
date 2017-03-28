@@ -16,6 +16,7 @@
 
 package com.intel.analytics.bigdl.example.deepspeech2
 
+import breeze.numerics.abs
 import com.intel.analytics.bigdl._
 import com.intel.analytics.bigdl.nn._
 import com.intel.analytics.bigdl.optim._
@@ -29,7 +30,7 @@ import scala.io.Source
 import scala.language.existentials
 import scala.reflect.ClassTag
 
-class DeepSpeech2[T : ClassTag]()
+class DeepSpeech2[T : ClassTag](depth: Int = 1)
                                (implicit ev: TensorNumeric[T]) {
 
   /**
@@ -52,33 +53,89 @@ class DeepSpeech2[T : ClassTag]()
   val inputSize = nOutputPlane
   val hiddenSize = nOutputPlane
   val nChar = 29
-  val brnn = BiRecurrent()
-    .add(RnnCell(inputSize, hiddenSize, ReLU[T]()))
+
+  /**
+   * append BiRNN layers to the deepspeech model.
+   * @param inputSize
+   * @param hiddenSize
+   * @param isCloneInput
+   * @param depth
+   * @return
+   */
+  def addBRNN(inputSize: Int, hiddenSize: Int, isCloneInput: Boolean, depth: Int): Module[T] = {
+    Sequential()
+      .add(BiRecurrent[T](JoinTable[T](2, 2), isCloneInput = isCloneInput)
+        .add(RnnCell[T](inputSize, hiddenSize, HardTanh[T](0, 20, true))).setName("birnn" + depth))
+  }
+
+  val brnn = Sequential()
+  var i = 1
+  while (i <= depth) {
+    if (i == 1) {
+      brnn.add(addBRNN(inputSize, hiddenSize, isCloneInput = true, i))
+    } else {
+      brnn.add(addBRNN(hiddenSize, hiddenSize, isCloneInput = false, i))
+    }
+    i += 1
+  }
+
   val linear1 = TimeDistributed[T](Linear[T](hiddenSize, hiddenSize, withBias = false))
   val linear2 = TimeDistributed[T](Linear[T](hiddenSize, nChar, withBias = false))
 
+  /**
+   * The deep speech2 model.
+   *****************************************************************************************
+   *
+   *   Convolution -> ReLU -> BiRNN (9 layers) -> Linear -> ReLUClip (HardTanh) -> Linear
+   *
+   *****************************************************************************************
+   */
   val model = Sequential[T]()
     .add(conv)
+    .add(ReLU[T]())
     .add(Transpose(Array((nOutputDim, outputWDim), (outputHDim, outputWDim))))
     .add(Squeeze(4))
     .add(brnn)
-//    .add(linear1)
-//    .add(ReLU[T]())
-//    .add(linear2)
+    .add(linear1)
+    .add(HardTanh[T](0, 20, true))
+    .add(linear2)
 
   def reset(): Unit = {
-    conv.weight.fill(ev.fromType[Double](0.001))
+    conv.weight.fill(ev.fromType[Double](0.0))
     conv.bias.fill(ev.fromType[Double](0.0))
   }
 
-  def evaluate(): Unit = {
+  def evaluate(inputs: Array[Double], expectOutputs: Array[Double], logger: Logger): Unit = {
 
-    val inputData = InputProcess.get()
-    val input = Tensor[Double](Storage(inputData), 1, Array(1, 1, 13, 398))
-    val output = model.forward(input).toTensor[T]
+    /**
+     ********************************************************
+     *  For my small test, I cut sample size to 198,
+     *  please modify it according to your input sample.
+     ********************************************************
+     */
+    val input = Tensor[Double](Storage(inputs), 1, Array(1, 1, 13, 198))
+    val output = model.forward(input).toTensor[Double]
 
-    println(output)
-    println(output.size.mkString(","))
+    var idx = 0
+    var accDiff = 0.0
+    output.apply1(x => {
+      if (x == 0) {
+        require(math.abs(x - expectOutputs(idx)) < 1e-2,
+          "output does not concord to each other " +
+            s"x = ${x}, expectX = ${expectOutputs(idx)}, idx = ${idx}")
+        accDiff += math.abs(x - expectOutputs(idx))
+      } else {
+        require(math.abs(x - expectOutputs(idx)) / x < 1e-1,
+          "output does not concord to each other " +
+            s"x = ${x}, expectX = ${expectOutputs(idx)}, idx = ${idx}")
+        accDiff += math.abs(x - expectOutputs(idx))
+      }
+      idx += 1
+      x
+    })
+
+    logger.warn("model inference finish!")
+    logger.warn("total relative error is : " + accDiff)
   }
 
 
@@ -88,22 +145,39 @@ class DeepSpeech2[T : ClassTag]()
 
   }
 
-  def setBiRNN0Weight(weights: Array[T]): Unit = {
-    val temp = Tensor[T](Storage(weights), 1, Array(1, 1152, 1, 13, 11))
-    val leftRnn = brnn.layer.parameters()._1
-    val rightRnn = brnn.revLayer.parameters()._2
-
-    var offset = 1
-    for (i <- 0 until leftRnn.length) {
-      leftRnn(i).set(Storage[T](weights), offset, leftRnn(i).size)
-      offset += leftRnn(i).nElement()
-    }
-    for (i <- 0 until rightRnn.length) {
-      rightRnn(i).set(Storage[T](weights), offset, rightRnn(i).size)
-      offset += rightRnn(i).nElement()
-    }
+  /**
+   * load in the nervana's dp2 BiRNN model parameters
+   * @param weights
+   */
+  def setBiRNNWeight(weights: Array[Array[T]]): Unit = {
+      val parameters = brnn.parameters()._1
+      // six tensors per brnn layer
+      val numOfParams = 6
+      for (i <- 0 until depth) {
+        var offset = 1
+        for (j <- 0 until numOfParams) {
+          val length = parameters(i * numOfParams + j).nElement()
+          val size = parameters(i * numOfParams + j).size
+          parameters(i * numOfParams + j).set(Storage[T](weights(i)), offset, size)
+          offset += length
+        }
+      }
   }
 
+  /**
+   * load in the nervana's dp2 Affine model parameters
+   * @param weights
+   * @param num
+   */
+  def setLinear0Weight(weights: Array[T], num: Int): Unit = {
+    if (num == 0) {
+      linear1.parameters()._1(0)
+        .set(Storage[T](weights), 1, Array(1152, 2304))
+    } else {
+      linear2.parameters()._1(0)
+        .set(Storage[T](weights), 1, Array(29, 1152))
+    }
+  }
 }
 
 object DeepSpeech2 {
@@ -111,28 +185,103 @@ object DeepSpeech2 {
   def main(args: Array[String]): Unit = {
     Logger.getLogger("org").setLevel(Level.WARN)
     Logger.getLogger("com").setLevel(Level.WARN)
+    val logger = Logger.getLogger(getClass)
 
     val spark = SparkSession.builder().master("local").appName("test").getOrCreate()
 
-    val origin = spark.sparkContext.textFile("/tmp/conv.txt")
-      .map(_.split("\\s+").map(_.toDouble)).flatMap(t => t).collect()
-    val weights = convert(origin)
+    /**
+     ***************************************************************************
+     *   Please configure your file path here:
+     *   There should be 9 txt files for birnn.
+     *   e.g. "/home/ywan/Documents/data/deepspeech/layer1.txt"
+     ***************************************************************************
+     */
+    val inputPath = "/home/ywan/Documents/data/deepspeech/inputdata.txt"
+    val nervanaOutputPath = "/home/ywan/Documents/data/deepspeech/output.txt"
+    val convPath = "/home/ywan/Documents/data/deepspeech/dp2conv.txt"
+    val birnnPath = "/home/ywan/Documents/data/deepspeech/layer"
+    val linear1Path = "/home/ywan/Documents/data/deepspeech/linear0.txt"
+    val linear2Path = "/home/ywan/Documents/data/deepspeech/linear1.txt"
 
-    val birnnOrigin0 = spark.sparkContext.textFile("/tmp/weights/layer0.txt")
-      .map(_.split(",").map(_.toDouble)).flatMap(t => t).collect()
-    val weightsBirnn0 = convertBiRNN(birnnOrigin0)
+    /**
+     *********************************************************
+     *    set the depth to be 9
+     *    timeSeqLen is the final output sequence length
+     *    The original timeSeqLen = 1000
+     *    for my small test, I set it to be 66.
+     *********************************************************
+     */
+    val depth = 9
+    val convFeatureSize = 1152
+    val birnnFeatureSize = 1152
+    val linear1FeatureSize = 2304
+    val linear2FeatureSize = 1152
+    val timeSeqLen = 66
 
-    val dp2 = new DeepSpeech2[Double]()
+    logger.warn("load in inputs and expectOutputs ..")
+    val inputs = spark.sparkContext.textFile(inputPath)
+      .map(_.toDouble).collect()
+    val expectOutputs =
+      spark.sparkContext.textFile(nervanaOutputPath)
+      .map(_.split(',').map(_.toDouble)).flatMap(t => t).collect()
+
+    /**
+     *************************************************************************
+     *    Loading model weights
+     *    1. conv
+     *    2. birnn
+     *    3. linear1
+     *    4. linear2
+     *************************************************************************
+     */
+
+    logger.warn("load in conv weights ..")
+    val convWeights =
+      spark.sparkContext.textFile(convPath)
+        .map(_.split(',').map(_.toDouble)).flatMap(t => t).collect()
+
+    logger.warn("load in birnn weights ..")
+    val weightsBirnn = new Array[Array[Double]](depth)
+    for (i <- 0 until depth) {
+      val birnnOrigin =
+        spark.sparkContext.textFile(birnnPath + i + ".txt")
+          .map(_.split(",").map(_.toDouble)).flatMap(t => t).collect()
+      weightsBirnn(i) = convertBiRNN(birnnOrigin, birnnFeatureSize)
+    }
+
+    logger.warn("load in linear1 weights ..")
+    val linearOrigin0 =
+      spark.sparkContext.textFile(linear1Path)
+        .map(_.split(",").map(_.toDouble)).flatMap(t => t).collect()
+    val weightsLinear0 = convertLinear(linearOrigin0, linear1FeatureSize)
+
+    logger.warn("load in linear2 weights ..")
+    val linearOrigin1 =
+      spark.sparkContext.textFile(linear2Path)
+        .map(_.split(",").map(_.toDouble)).flatMap(t => t).collect()
+    val weightsLinear1 = convertLinear(linearOrigin1, linear2FeatureSize)
+
+    /**
+     **************************************************************************
+     *  set all the weights to the model and run the model
+     *  dp2.evaluate()
+     **************************************************************************
+     */
+    val dp2 = new DeepSpeech2[Double](depth)
     dp2.reset()
-    dp2.setConvWeight(weights)
-    dp2.setBiRNN0Weight(weightsBirnn0)
-    dp2.evaluate()
+    dp2.setConvWeight(convert(convWeights, convFeatureSize))
+    dp2.setBiRNNWeight(weightsBirnn)
+    dp2.setLinear0Weight(weightsLinear0, 0)
+    dp2.setLinear0Weight(weightsLinear1, 1)
+
+    logger.warn("run the model ..")
+    dp2.evaluate(inputs, convert(expectOutputs, timeSeqLen), logger)
   }
 
-  def convert(origin: Array[Double]): Array[Double] = {
-    val channel = 1152
+  def convert(origin: Array[Double], channelSize: Int): Array[Double] = {
+    val channel = channelSize
     val buffer = new ArrayBuffer[Double]()
-    val groups = origin.grouped(1152).toArray
+    val groups = origin.grouped(channelSize).toArray
 
     for(i <- 0 until channel)
       for (j <- 0 until groups.length)
@@ -140,9 +289,20 @@ object DeepSpeech2 {
     buffer.toArray
   }
 
-  def convertBiRNN(origin: Array[Double]): Array[Double] = {
-    val nIn = 1152
-    val nOut = 1152
+  def convertLinear(origin: Array[Double], channelSize: Int): Array[Double] = {
+    val channel = channelSize
+    val buffer = new ArrayBuffer[Double]()
+    val groups = origin.grouped(channelSize).toArray
+
+    for (j <- 0 until groups.length)
+      for(i <- 0 until channel)
+        buffer += groups(j)(i)
+    buffer.toArray
+  }
+
+  def convertBiRNN(origin: Array[Double], channelSize: Int): Array[Double] = {
+    val nIn = channelSize
+    val nOut = channelSize
     val heights = 2 * (nIn + nOut + 1)
     val widths = nOut
 
@@ -153,18 +313,18 @@ object DeepSpeech2 {
      * left-to-right rnn U, W, and bias
      */
 
-    for (j <- 0 until nOut) {
-      for (i <- 0 until nIn) {
+    for (i <- 0 until nIn) {
+      for (j <- 0 until nOut) {
         buffer += groups(i)(j)
       }
     }
-    for (j <- 0 until nOut) {
-      for (i <- 2 * nIn until (2 * nIn + nOut)) {
+    for (i <- 2 * nIn until (2 * nIn + nOut)) {
+      for (j <- 0 until nOut) {
         buffer += groups(i)(j)
       }
     }
-    for (j <- 0 until nOut) {
-      for (i <- 2 * (nIn + nOut + 1) - 2 until 2 * (nIn + nOut + 1) - 1) {
+    for (i <- 2 * (nIn + nOut + 1) - 2 until 2 * (nIn + nOut + 1) - 1) {
+      for (j <- 0 until nOut) {
         buffer += groups(i)(j)
       }
     }
@@ -173,18 +333,18 @@ object DeepSpeech2 {
      * right-to-left rnn U, W, and bias
      */
 
-    for (j <- 0 until nOut) {
-      for (i <- nIn until 2 * nIn) {
+    for (i <- nIn until 2 * nIn) {
+      for (j <- 0 until nOut) {
         buffer += groups(i)(j)
       }
     }
-    for (j <- 0 until nOut) {
-      for (i <- (2 * nIn + nOut) until (2 * nIn + 2 * nOut)) {
+    for (i <- (2 * nIn + nOut) until (2 * nIn + 2 * nOut)) {
+      for (j <- 0 until nOut) {
         buffer += groups(i)(j)
       }
     }
-    for (j <- 0 until nOut) {
-      for (i <- 2 * (nIn + nOut + 1) - 1 until 2 * (nIn + nOut + 1)) {
+    for (i <- 2 * (nIn + nOut + 1) - 1 until 2 * (nIn + nOut + 1)) {
+      for (j <- 0 until nOut) {
         buffer += groups(i)(j)
       }
     }

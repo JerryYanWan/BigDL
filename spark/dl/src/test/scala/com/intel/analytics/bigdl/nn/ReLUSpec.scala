@@ -23,6 +23,28 @@ import scala.math.abs
 
 @com.intel.analytics.bigdl.tags.Parallel
 class ReLUSpec extends FlatSpec {
+  "A ReLU Module" should " be fast" in {
+    val module = new ReLU[Double]()
+    val input = Tensor[Double](2, 100, 10000).rand
+    val gradOutput = Tensor[Double]().resizeAs(input).rand
+    var startTime = System.nanoTime
+    var duration = (System.nanoTime() - startTime) / 1e9
+    var sum = 0.0
+    for (i <- 1 to 10) {
+      module.forward(input)
+      module.backward(input, gradOutput)
+    }
+    for (i <- 1 to 10) {
+      startTime = System.nanoTime
+      module.forward(input)
+      module.backward(input, gradOutput)
+      duration = (System.nanoTime() - startTime) / 1e9
+      sum += duration
+      println(s"elapsed time = ${duration}")
+    }
+    println(s"average elapsed time = ${sum/10}")
+  }
+
   "A ReLU Module " should "generate correct output and grad" in {
     val module = new ReLU[Double]()
     val input = Tensor[Double](2, 2, 2)

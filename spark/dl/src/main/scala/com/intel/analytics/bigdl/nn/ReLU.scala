@@ -16,8 +16,10 @@
 
 package com.intel.analytics.bigdl.nn
 
-import com.intel.analytics.bigdl.tensor.Tensor
+import com.intel.analytics.bigdl.mkl.MKL
+import com.intel.analytics.bigdl.tensor.{DoubleType, FloatType, Storage, Tensor}
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric
+import org.apache.hadoop.hdfs.protocol.proto.DatanodeProtocolProtos.StorageBlockReportProto
 
 import scala.reflect.ClassTag
 
@@ -36,16 +38,33 @@ class ReLU[T: ClassTag](ip: Boolean = false)(
   private var buffer1: Array[T] = null
 
   private def calcRegularWave(input: Tensor[T]): Unit = {
-    if (buffer1 == null || buffer1.length < input.nElement) {
-      buffer1 = new Array[T](input.nElement)
+    val length = input.nElement
+    if (buffer1 == null || buffer1.length < length) {
+      buffer1 = new Array[T](length)
     }
-    val offset = input.storageOffset - 1
-    var i = 0
-    while (i < input.nElement) {
-      if (ev.isGreater(input.storage.array()(offset + i), ev.zero)) {
-        buffer1(i) = ev.one
-      }
-      i += 1
+    ev.getType match {
+      case FloatType =>
+        val _input = input.storage.asInstanceOf[Storage[Float]]
+        val buffer = buffer1.asInstanceOf[Array[Float]]
+        val offset = input.storageOffset - 1
+        var i = 0
+        while (i < length) {
+          if (_input(offset + i) > 0) {
+            buffer(i) = 1.0f
+          }
+          i += 1
+        }
+      case DoubleType =>
+        val _input = input.storage.asInstanceOf[Storage[Double]]
+        val buffer = buffer1.asInstanceOf[Array[Double]]
+        val offset = input.storageOffset - 1
+        var i = 0
+        while (i < length) {
+          if (_input(offset + i) > 0) {
+            buffer(i) = 1.0
+          }
+          i += 1
+        }
     }
   }
 
